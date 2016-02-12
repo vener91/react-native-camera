@@ -4,11 +4,11 @@
 
 package com.lwansbrough.RCTCamera;
 
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
+import android.content.res.Configuration;
+import android.graphics.*;
 import android.hardware.Camera;
 import android.net.Uri;
-import android.os.Environment;
+import android.os.*;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.util.Log;
@@ -170,61 +170,88 @@ public class RCTCameraModule extends ReactContextBaseJavaModule {
         RCTCamera.getInstance().setCaptureQuality(options.getInt("type"), options.getString("quality"));
         camera.takePicture(null, null, new Camera.PictureCallback() {
             @Override
-            public void onPictureTaken(byte[] data, Camera camera) {
+            public void onPictureTaken(final byte[] data, Camera camera) {
                 camera.stopPreview();
                 camera.startPreview();
-                switch (options.getInt("target")) {
-                    case RCT_CAMERA_CAPTURE_TARGET_MEMORY:
-                        String encoded = Base64.encodeToString(data, Base64.DEFAULT);
-                        promise.resolve(encoded);
-                        break;
-                    case RCT_CAMERA_CAPTURE_TARGET_CAMERA_ROLL:
-                        BitmapFactory.Options bitmapOptions = new BitmapFactory.Options();
-                        Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length, bitmapOptions);
-                        String url = MediaStore.Images.Media.insertImage(
-                                _reactContext.getContentResolver(),
-                                bitmap, options.getString("title"),
-                                options.getString("description"));
-                        promise.resolve(url);
-                        break;
-                    case RCT_CAMERA_CAPTURE_TARGET_DISK:
-                        File pictureFile = getOutputMediaFile(MEDIA_TYPE_IMAGE);
-                        if (pictureFile == null) {
-                            promise.reject("Error creating media file.");
-                            return;
-                        }
+                new AsyncTask<Void, Void, Void>() {
+                    @Override
+                    protected Void doInBackground(Void... params) {
+                        switch (options.getInt("target")) {
+                            case RCT_CAMERA_CAPTURE_TARGET_MEMORY:
+                                String encoded = Base64.encodeToString(data, Base64.DEFAULT);
+                                promise.resolve(encoded);
+                                break;
+                            case RCT_CAMERA_CAPTURE_TARGET_CAMERA_ROLL:
+                                if (data == null) {
+                                    promise.reject("No data captured");
+                                }
 
-                        try {
-                            FileOutputStream fos = new FileOutputStream(pictureFile);
-                            fos.write(data);
-                            fos.close();
-                        } catch (FileNotFoundException e) {
-                            promise.reject("File not found: " + e.getMessage());
-                        } catch (IOException e) {
-                            promise.reject("Error accessing file: " + e.getMessage());
-                        }
-                        promise.resolve(Uri.fromFile(pictureFile).toString());
-                        break;
-                    case RCT_CAMERA_CAPTURE_TARGET_TEMP:
-                        File tempFile = getTempMediaFile(MEDIA_TYPE_IMAGE);
+                                int screenWidth = _reactContext.getResources().getDisplayMetrics().widthPixels;
+                                int screenHeight = _reactContext.getResources().getDisplayMetrics().heightPixels;
+                                Bitmap bm = BitmapFactory.decodeByteArray(data, 0, (data != null) ? data.length : 0);
 
-                        if (tempFile == null) {
-                            promise.reject("Error creating media file.");
-                            return;
-                        }
+                                if (_reactContext.getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT) {
+                                    // Notice that width and height are reversed
+                                    Bitmap scaled = Bitmap.createScaledBitmap(bm, screenHeight, screenWidth, true);
+                                    int w = scaled.getWidth();
+                                    int h = scaled.getHeight();
+                                    // Setting post rotate to 90
+                                    Matrix mtx = new Matrix();
+                                    mtx.postRotate(90);
+                                    // Rotating Bitmap
+                                    bm = Bitmap.createBitmap(scaled, 0, 0, w, h, mtx, true);
+                                } else { // LANDSCAPE MODE
+                                    //No need to reverse width and height
+                                    Bitmap scaled = Bitmap.createScaledBitmap(bm, screenWidth,screenHeight , true);
+                                    bm = scaled;
+                                }
+                                String url = MediaStore.Images.Media.insertImage(
+                                        _reactContext.getContentResolver(),
+                                        bm, options.getString("title"),
+                                        options.getString("description"));
+                                promise.resolve(url);
+                                break;
+                            case RCT_CAMERA_CAPTURE_TARGET_DISK:
+                                File pictureFile = getOutputMediaFile(MEDIA_TYPE_IMAGE);
+                                if (pictureFile == null) {
+                                    promise.reject("Error creating media file.");
+                                    return null;
+                                }
 
-                        try {
-                            FileOutputStream fos = new FileOutputStream(tempFile);
-                            fos.write(data);
-                            fos.close();
-                        } catch (FileNotFoundException e) {
-                            promise.reject("File not found: " + e.getMessage());
-                        } catch (IOException e) {
-                            promise.reject("Error accessing file: " + e.getMessage());
+                                try {
+                                    FileOutputStream fos = new FileOutputStream(pictureFile);
+                                    fos.write(data);
+                                    fos.close();
+                                } catch (FileNotFoundException e) {
+                                    promise.reject("File not found: " + e.getMessage());
+                                } catch (IOException e) {
+                                    promise.reject("Error accessing file: " + e.getMessage());
+                                }
+                                promise.resolve(Uri.fromFile(pictureFile).toString());
+                                break;
+                            case RCT_CAMERA_CAPTURE_TARGET_TEMP:
+                                File tempFile = getTempMediaFile(MEDIA_TYPE_IMAGE);
+
+                                if (tempFile == null) {
+                                    promise.reject("Error creating media file.");
+                                    return null;
+                                }
+
+                                try {
+                                    FileOutputStream fos = new FileOutputStream(tempFile);
+                                    fos.write(data);
+                                    fos.close();
+                                } catch (FileNotFoundException e) {
+                                    promise.reject("File not found: " + e.getMessage());
+                                } catch (IOException e) {
+                                    promise.reject("Error accessing file: " + e.getMessage());
+                                }
+                                promise.resolve(Uri.fromFile(tempFile).toString());
+                                break;
                         }
-                        promise.resolve(Uri.fromFile(tempFile).toString());
-                        break;
-                }
+                        return null;
+                    }
+                }.execute();
             }
         });
     }

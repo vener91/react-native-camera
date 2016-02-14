@@ -8,6 +8,7 @@
   "description": "A Camera component for React Native. Also reads barcodes.",
   "author": "Lochlan Wansbrough <lochie@live.com> (http://lwansbrough.com)",
   "nativePackage": true,
+  "main": "Camera.js",
   "keywords": [
     "react-native",
     "react",
